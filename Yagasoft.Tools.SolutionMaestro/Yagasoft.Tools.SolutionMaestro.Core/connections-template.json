@@ -1,0 +1,3 @@
+{
+	"connectionString": "AuthType=AD; Url=http://127.0.0.1/Test1; Domain=DOMAIN; Username=USER; Password=PASS"
+}
