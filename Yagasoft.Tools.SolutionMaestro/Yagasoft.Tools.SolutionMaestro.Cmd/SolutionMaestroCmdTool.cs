@@ -11,7 +11,7 @@ using Yagasoft.Tools.CmdToolTemplate.Tool;
 using Yagasoft.Tools.Common.Exceptions;
 using Yagasoft.Tools.Common.Helpers;
 using Yagasoft.Tools.SolutionMaestro.Cmd.Args;
-using Yagasoft.Tools.SolutionMaestro.Core.IO;
+using Yagasoft.Tools.SolutionMaestro.Core.Operations.IO;
 using Yagasoft.Tools.SolutionMaestro.Core.Parameters;
 using ConnectionHelpers = Yagasoft.Tools.Common.Helpers.ConnectionHelpers;
 
@@ -19,6 +19,7 @@ using ConnectionHelpers = Yagasoft.Tools.Common.Helpers.ConnectionHelpers;
 
 namespace Yagasoft.Tools.SolutionMaestro.Cmd
 {
+	[Log]
 	public class SolutionMaestroCmdTool : ICmdTool<Arguments>
 	{
 		private ShellArguments shellArgs;
@@ -32,6 +33,7 @@ namespace Yagasoft.Tools.SolutionMaestro.Cmd
 		private readonly List<ExportParams> exportParams = new List<ExportParams>();
 		private readonly List<ImportParams> importParams = new List<ImportParams>();
 
+		[NoLog]
 		public void Initialise(ShellArguments shellArguments, Arguments toolArguments, CrmLog crmLog)
 		{
 			shellArgs = shellArguments;
@@ -130,28 +132,40 @@ namespace Yagasoft.Tools.SolutionMaestro.Cmd
 				log.Log($"Import configuration: {args.ImportConfig}.");
 			}
 
-			if (args.ConfigFile.IsFilled() && File.Exists(args.ConfigFile))
+			ProcessConfigFile(args.ConfigFile);
+		}
+
+		private void ProcessConfigFile(string file)
+		{
+			if (file.IsFilled() && File.Exists(file))
 			{
 				log.Log("Parsing config file ...");
-				var config = ConfigHelpers.GetConfigurationParams<SolutionParams>(args.ConfigFile);
+				var config = ConfigHelpers.GetConfigurationParams<SolutionParams>(file);
 				log.Log($"Parsed config file.");
 
-				if (config.Pipeline != null)
+				if (config.Pipeline == null)
 				{
-					exportParams.AddRange(config.Pipeline.Where(p => p is ExportParams).Cast<ExportParams>());
-					importParams.AddRange(config.Pipeline.Where(p => p is ImportParams).Cast<ImportParams>());
+					return;
 				}
 
-				if (config.Global != null)
+				foreach (var param in config.Pipeline)
 				{
-					foreach (var exportParam in exportParams)
+					switch (param)
 					{
-						OverwriteConfig(config.Global, exportParam);
-					}
+						case ExportParams exportParam:
+							OverwriteConfig(config.Global, exportParam);
+							exportParams.Add(exportParam);
+							break;
 
-					foreach (var importParam in importParams)
-					{
-						OverwriteConfig(config.Global, importParam);
+						case ImportParams importParam:
+							OverwriteConfig(config.Global, importParam);
+							importParams.Add(importParam);
+							break;
+
+						case ConfigRefParams configRef:
+							OverwriteConfig(config.Global, configRef);
+							ProcessConfigFile(Path.Combine(configRef.Path, configRef.File));
+							break;
 					}
 				}
 			}

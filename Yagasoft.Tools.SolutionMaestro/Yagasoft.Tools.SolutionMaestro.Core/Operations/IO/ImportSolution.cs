@@ -1,6 +1,7 @@
 ﻿#region Imports
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -19,9 +20,10 @@ using Yagasoft.Tools.SolutionMaestro.Core.Parameters;
 
 #endregion
 
-namespace Yagasoft.Tools.SolutionMaestro.Core.IO
+namespace Yagasoft.Tools.SolutionMaestro.Core.Operations.IO
 {
-	public class ImportSolution
+	[Log]
+	public class ImportSolution : OperationBase
 	{
 		private readonly IOrganizationService service;
 		private readonly CrmLog log;
@@ -42,7 +44,8 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 			config = importParams;
 
 			log.Log($"Processing import config ...\r\n{ConfigHelpers.Serialise(importParams)}");
-
+			FileHelpers.EnsureFolderExists(config.Path);
+			
 			foreach (var solutionName in config.Names.Split(';'))
 			{
 				var retry = config.IsRetry == true ? 1 : 0;
@@ -53,31 +56,49 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 					{
 						log.Log($"Processing solution '{solutionName}' ...");
 
-						var solution = LoadSolution(solutionName);
-						var isUpdated = IsSolutionUpdated(solution);
+						var solutions = LoadSolutions(solutionName);
 
-						if (!isUpdated)
+						foreach (var solution in solutions)
 						{
-							log.LogWarning("Identical solution versions.");
-						}
+							retry = config.IsRetry == true ? 1 : 0;
 
-						if (config.IsOverwrite == true || isUpdated)
-						{
-							var isImported = Import(solution);
-
-							if (!isImported)
+							try
 							{
-								throw new ToolException("Failed to import solution.");
+								var isUpdated = IsSolutionUpdated(solution);
+
+								if (!isUpdated)
+								{
+									log.LogWarning("Identical solution versions.");
+								}
+
+								if (config.IsOverwrite == true || isUpdated)
+								{
+									var isImported = Import(solution);
+
+									if (!isImported)
+									{
+										throw new ToolException("Failed to import solution.");
+									}
+								}
+								else
+								{
+									log.LogWarning("Skipping.");
+								}
+
+								log.Log($"[Finished] Processing solution '{solution.Name}'.");
+
+								break;
+							}
+							catch
+							{
+								if (retry-- <= 0)
+								{
+									throw;
+								}
+
+								log.LogWarning("Retrying ...");
 							}
 						}
-						else
-						{
-							log.LogWarning("Skipping.");
-						}
-
-						log.Log($"[Finished] Processing solution '{solution.Name}'.");
-
-						break;
 					}
 					catch
 					{
@@ -250,7 +271,7 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 				{
 					try
 					{
-						var latestIndex = Directory.GetFiles(".")
+						var latestIndex = Directory.GetFiles(config.Path)
 							.Select(f => Regex.Match(f, @"import(?:-(\d+))?\.log").Groups[1].Value)
 							.Where(f => f.IsNotEmpty())
 							.Select(int.Parse)
@@ -269,32 +290,36 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 			return true;
 		}
 
-		private SolutionInfo LoadSolution(string solutionName)
+		private IEnumerable<SolutionInfo> LoadSolutions(string solutionName)
 		{
-			var path = Directory.GetFiles(config.Path, "*.zip")
+			var paths = Directory.GetFiles(config.Path, "*.zip")
 				.Where(f => Regex.IsMatch(f, solutionName))
-				.OrderByDescending(f => f)
-				.FirstOrDefault();
+				.OrderByDescending(f => f).ToArray();
 
-			if (path == null)
+			if (!paths.Any())
 			{
 				throw new ToolException(
 					$"Couldn't find a solution matching pattern: '{solutionName}' in '{Path.GetDirectoryName(config.Path)}'.");
 			}
 
-			log.Log($"Loading solution: {path} ...");
-
-			var data = File.ReadAllBytes(path);
-			var solutionInfo = GetSolutionInfo(data);
-
 			return
-				new SolutionInfo
+			paths.Select(
+				path =>
 				{
-					Name = solutionInfo.name,
-					Version = solutionInfo.version,
-					IsManaged = solutionInfo.isManaged,
-					Data = data
-				};
+					log.Log($"Loading solution: {path} ...");
+
+					var data = File.ReadAllBytes(path);
+					var(name, version, isManaged) = GetSolutionInfo(data);
+
+					return
+						new SolutionInfo
+						{
+							Name = name,
+							Version = version,
+							IsManaged = isManaged,
+							Data = data
+						};
+				});
 		}
 
 		private (string name, string version, bool isManaged) GetSolutionInfo(byte[] solution)

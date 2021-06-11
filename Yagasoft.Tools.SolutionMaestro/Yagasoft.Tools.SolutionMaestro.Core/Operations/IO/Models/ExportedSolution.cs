@@ -1,4 +1,4 @@
-﻿namespace Yagasoft.Tools.SolutionMaestro.Core.IO.Models
+﻿namespace Yagasoft.Tools.SolutionMaestro.Core.Operations.IO.Models
 {
 	public class ExportedSolution
 	{

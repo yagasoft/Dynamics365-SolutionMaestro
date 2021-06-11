@@ -8,18 +8,18 @@ using System.Text.RegularExpressions;
 using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Newtonsoft.Json;
 using Yagasoft.Libraries.Common;
 using Yagasoft.Tools.Common.Exceptions;
 using Yagasoft.Tools.Common.Helpers;
-using Yagasoft.Tools.SolutionMaestro.Core.IO.Models;
+using Yagasoft.Tools.SolutionMaestro.Core.Operations.IO.Models;
 using Yagasoft.Tools.SolutionMaestro.Core.Parameters;
 
 #endregion
 
-namespace Yagasoft.Tools.SolutionMaestro.Core.IO
+namespace Yagasoft.Tools.SolutionMaestro.Core.Operations.IO
 {
-	public class ExportSolution
+	[Log]
+	public class ExportSolution : OperationBase
 	{
 		private readonly IOrganizationService service;
 		private readonly CrmLog log;
@@ -46,14 +46,14 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 
 			foreach (var solutionName in config.Names.Split(';'))
 			{
-				ExportedSolution exportedSolution;
+				ExportedSolution[] exportedSolutions;
 				var retry = config.IsRetry == true ? 1 : 0;
 
 				do
 				{
 					try
 					{
-						exportedSolution = RetrieveSolution(solutionName, solutionInfo);
+						exportedSolutions = RetrieveSolution(solutionName, solutionInfo).ToArray();
 						break;
 					}
 					catch
@@ -68,76 +68,82 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 				}
 				while (true);
 
-				if (exportedSolution != null)
+				foreach (var exportedSolution in exportedSolutions)
 				{
 					SaveSolutionFile(exportedSolution);
 				}
 			}
 		}
 
-		private ExportedSolution RetrieveSolution(string solutionName, IEnumerable<Entity> allSolutionInfoParam)
+		private IEnumerable<ExportedSolution> RetrieveSolution(string solutionName, IEnumerable<Entity> allSolutionInfoParam)
 		{
 			solutionName.RequireFilled(nameof(solutionName));
 			allSolutionInfoParam.Require(nameof(allSolutionInfoParam));
 
 			var allSolutionInfo = allSolutionInfoParam.ToArray();
 
-			var solutionInfo = allSolutionInfo
+			var solutionsInfo = allSolutionInfo
 				.Where(s => Regex.IsMatch(s.GetAttributeValue<string>(Solution.Name), solutionName)
 					|| Regex.IsMatch(s.GetAttributeValue<string>(Solution.DisplayName_FriendlyName), solutionName)
 					|| (s.GetAttributeValue<EntityReference>(Solution.ParentSolution)?.Name.IsFilled() == true
 						&& Regex.IsMatch(s.GetAttributeValue<EntityReference>(Solution.ParentSolution).Name, solutionName))
-					|| (s.GetAttributeValue<string>(Solution.ParentSolutionUniqueName)?.IsFilled() == true
-						&& Regex.IsMatch(s.GetAttributeValue<string>(Solution.ParentSolutionUniqueName), solutionName)))
-				.OrderByDescending(s => new Version(s.GetAttributeValue<string>(Solution.Version))).FirstOrDefault();
+					|| (s.GetAttributeValue<string>(Models.Solution.ParentSolutionUniqueName)?.IsFilled() == true
+						&& Regex.IsMatch(s.GetAttributeValue<string>(Models.Solution.ParentSolutionUniqueName), solutionName)))
+				.OrderByDescending(s => new Version(s.GetAttributeValue<string>(Solution.Version))).ToArray();
 
-			if (solutionInfo == null)
+			if (!solutionsInfo.Any())
 			{
 				throw new ToolException($"Couldn't find a solution matching pattern: {solutionName}.");
 			}
 
-			log.Log(
-				$@"Found solution matching '{solutionName}':
+			return
+				solutionsInfo.Select(
+					solutionInfo =>
+					{
+						log.Log(
+							$@"Found solution matching '{solutionName}':
 {solutionInfo.GetAttributeValue<string>(Solution.DisplayName_FriendlyName)}
 {solutionInfo.GetAttributeValue<string>(Solution.Name)}
 v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 
-			var exportedSolution =
-				new ExportedSolution
-				{
-					SolutionName = solutionInfo.GetAttributeValue<string>(Solution.ParentSolutionUniqueName)
-						?? solutionInfo.GetAttributeValue<string>(Solution.Name),
-					Version = solutionInfo.GetAttributeValue<string>(Solution.Version)
-				};
+						var exportedSolution =
+							new ExportedSolution
+							{
+								SolutionName = solutionInfo.GetAttributeValue<string>(Models.Solution.ParentSolutionUniqueName)
+									?? solutionInfo.GetAttributeValue<string>(Solution.Name),
+								Version = solutionInfo.GetAttributeValue<string>(Solution.Version)
+							};
 
-			if (!IsAllowedWrite(exportedSolution))
-			{
-				log.LogWarning("Skipping.");
-				return null;
-			}
+						if (!IsAllowedWrite(exportedSolution))
+						{
+							log.LogWarning("Skipping.");
+							return null;
+						}
 
-			var request =
-				new ExportSolutionRequest
-				{
-					Managed = config.IsManaged == true,
-					SolutionName = solutionInfo.GetAttributeValue<string>(Solution.Name)
-				};
+						var request =
+							new ExportSolutionRequest
+							{
+								Managed = config.IsManaged == true,
+								SolutionName = solutionInfo.GetAttributeValue<string>(Solution.Name)
+							};
 
-			if (!isPublished && config.IsPublish == true)
-			{
-				log.Log($"Publishing customisations ...");
-				service.Execute(new PublishAllXmlRequest());
-				isPublished = true;
-				log.Log($"[Finished] Publishing customisations.");
-			}
+						if (!isPublished && config.IsPublish == true)
+						{
+							log.Log($"Publishing customisations ...");
+							service.Execute(new PublishAllXmlRequest());
+							isPublished = true;
+							log.Log($"[Finished] Publishing customisations.");
+						}
 
-			log.Log($"Exporting ...");
-			var response = (ExportSolutionResponse)service.Execute(request);
-			log.Log($"[Finished] Exported.");
+						log.Log($"Exporting ...");
+						var response = (ExportSolutionResponse)service.Execute(request);
+						log.Log($"[Finished] Exported.");
 
-			exportedSolution.Data = response.ExportSolutionFile;
+						exportedSolution.Data = response.ExportSolutionFile;
 
-			return exportedSolution;
+						return exportedSolution;
+					})
+					.Where(s => s != null);
 		}
 
 		private IEnumerable<Entity> RetrieveSolutionInformation()
@@ -163,7 +169,7 @@ v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 
 			foreach (var solution in solutions.Where(s => s.GetAttributeValue<EntityReference>(Solution.ParentSolution) != null))
 			{
-				solution[Solution.ParentSolutionUniqueName] = solutions
+				solution[Models.Solution.ParentSolutionUniqueName] = solutions
 					.FirstOrDefault(ps => ps.Id == solution.GetAttributeValue<EntityReference>(Solution.ParentSolution).Id)?
 					.GetAttributeValue<string>(Solution.Name);
 			}
@@ -173,7 +179,7 @@ v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 
 		private void SaveSolutionFile(ExportedSolution solution)
 		{
-			EnsureFolderExists();
+			FileHelpers.EnsureFolderExists(config.Path);
 
 			if (!IsAllowedWrite(solution))
 			{
@@ -202,17 +208,6 @@ v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 			}
 
 			return true;
-		}
-
-		private void EnsureFolderExists()
-		{
-			var folder = config.Path;
-
-			if (!Directory.Exists(folder))
-			{
-				log.Log($"Creating folder '{folder}' ...");
-				Directory.CreateDirectory(folder);
-			}
 		}
 
 		private string GetFilePath(ExportedSolution solution)
