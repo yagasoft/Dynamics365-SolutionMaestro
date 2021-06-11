@@ -8,8 +8,10 @@ using System.Text.RegularExpressions;
 using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using Newtonsoft.Json;
 using Yagasoft.Libraries.Common;
 using Yagasoft.Tools.Common.Exceptions;
+using Yagasoft.Tools.Common.Helpers;
 using Yagasoft.Tools.SolutionMaestro.Core.IO.Models;
 using Yagasoft.Tools.SolutionMaestro.Core.Parameters;
 
@@ -22,7 +24,7 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 		private readonly IOrganizationService service;
 		private readonly CrmLog log;
 
-		private ExportParams exportParams;
+		private ExportParams config;
 
 		private bool isPublished;
 
@@ -32,18 +34,20 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 			log = logParam;
 		}
 
-		public void ExportSolutions(ExportParams exportParamsParam)
+		public void Export(ExportParams exportParams)
 		{
-			exportParamsParam.Require(nameof(exportParamsParam));
+			exportParams.Require(nameof(exportParams));
 
-			exportParams = exportParamsParam;
+			config = exportParams;
+
+			log.Log($"Processing export config ...\r\n{ConfigHelpers.Serialise(config)}");
 
 			var solutionInfo = RetrieveSolutionInformation().ToArray();
 
-			foreach (var solutionName in exportParams.Names.Split(';'))
+			foreach (var solutionName in config.Names.Split(';'))
 			{
 				ExportedSolution exportedSolution;
-				var retry = 1;
+				var retry = config.IsRetry == true ? 1 : 0;
 
 				do
 				{
@@ -52,12 +56,14 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.IO
 						exportedSolution = RetrieveSolution(solutionName, solutionInfo);
 						break;
 					}
-					catch (Exception)
+					catch
 					{
 						if (retry-- <= 0)
 						{
 							throw;
 						}
+	
+						log.LogWarning("Retrying ...");
 					}
 				}
 				while (true);
@@ -113,11 +119,11 @@ v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 			var request =
 				new ExportSolutionRequest
 				{
-					Managed = exportParams.IsManaged,
+					Managed = config.IsManaged == true,
 					SolutionName = solutionInfo.GetAttributeValue<string>(Solution.Name)
 				};
 
-			if (!isPublished && exportParams.IsPublish)
+			if (!isPublished && config.IsPublish == true)
 			{
 				log.Log($"Publishing customisations ...");
 				service.Execute(new PublishAllXmlRequest());
@@ -189,7 +195,7 @@ v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 			{
 				log.LogWarning($"File already exists ({filePath}).");
 
-				if (!exportParams.IsOverwrite)
+				if (!config.IsOverwrite == true)
 				{
 					return false;
 				}
@@ -200,7 +206,7 @@ v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 
 		private void EnsureFolderExists()
 		{
-			var folder = GetFolderPath();
+			var folder = config.Path;
 
 			if (!Directory.Exists(folder))
 			{
@@ -209,16 +215,11 @@ v{solutionInfo.GetAttributeValue<string>(Solution.Version)}");
 			}
 		}
 
-		private string GetFolderPath()
-		{
-			return exportParams.Path.IsFilled() ? exportParams.Path : ".";
-		}
-
 		private string GetFilePath(ExportedSolution solution)
 		{
-			var folder = GetFolderPath();
+			var folder = config.Path;
 			var fileName = $"{solution.SolutionName}_{solution.Version}"
-				+ $"{(exportParams.IsDateFile ? $"_{DateTime.Now:yyyy-MM-dd_HH-mm-ss-fff}" : "")}.zip";
+				+ $"{(config.IsDateFile == true ? $"_{DateTime.Now:yyyy-MM-dd_HH-mm-ss-fff}" : "")}.zip";
 			return Path.Combine(folder, fileName);
 		}
 	}

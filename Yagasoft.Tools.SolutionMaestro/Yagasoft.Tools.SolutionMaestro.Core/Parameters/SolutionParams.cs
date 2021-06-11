@@ -8,10 +8,7 @@ namespace Yagasoft.Tools.SolutionMaestro.Core.Parameters
 {
 	public class SolutionParams
 	{
-		public string Names { get; set; }
-		public bool IsOverwrite { get; set; }
-		public bool IsRetry { get; set; }
-		public bool IsPublish { get; set; } = true;
-		public string Path { get; set; }
+		public GlobalParams Global { get; set; }
+		public IEnumerable<PipelineParams> Pipeline { get; set; }
 	}
 }

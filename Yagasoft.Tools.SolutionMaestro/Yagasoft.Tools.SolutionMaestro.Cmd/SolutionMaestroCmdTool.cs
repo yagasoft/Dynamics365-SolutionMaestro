@@ -1,13 +1,14 @@
 ﻿#region Imports
 
-using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.Xrm.Sdk;
-using Newtonsoft.Json;
 using Yagasoft.Libraries.Common;
 using Yagasoft.Libraries.EnhancedOrgService.Helpers;
 using Yagasoft.Tools.CmdToolTemplate.Shell;
 using Yagasoft.Tools.CmdToolTemplate.Tool;
+using Yagasoft.Tools.Common.Exceptions;
 using Yagasoft.Tools.Common.Helpers;
 using Yagasoft.Tools.SolutionMaestro.Cmd.Args;
 using Yagasoft.Tools.SolutionMaestro.Core.IO;
@@ -28,8 +29,8 @@ namespace Yagasoft.Tools.SolutionMaestro.Cmd
 		private IOrganizationService sourceService;
 		private IOrganizationService destService;
 
-		private ExportParams exportParams = new ExportParams();
-		private ImportParams importParams = new ImportParams();
+		private readonly List<ExportParams> exportParams = new List<ExportParams>();
+		private readonly List<ImportParams> importParams = new List<ImportParams>();
 
 		public void Initialise(ShellArguments shellArguments, Arguments toolArguments, CrmLog crmLog)
 		{
@@ -37,10 +38,54 @@ namespace Yagasoft.Tools.SolutionMaestro.Cmd
 			args = toolArguments;
 			log = crmLog;
 
-			ParseConfiguration();
+			ParseConnections();
+			ParseConfigs();
+			Connect();
 		}
 
-		private void ParseConfiguration()
+		public void Run()
+		{
+			if (exportParams.Any())
+			{
+				var exporter = new ExportSolution(sourceService, log);
+
+				foreach (var exportParam in exportParams)
+				{
+					if (exportParam?.Names.IsFilled() == true)
+					{
+						if (sourceService == null)
+						{
+							throw new ToolException("Could not establish a connection to source server."
+								+ " Make sure that you passed a proper connection string or file.");
+						}
+
+						exporter.Export(exportParam);
+					}
+				}
+			}
+
+			if (importParams.Any())
+			{
+				var importer = new ImportSolution(sourceService, log);
+
+				foreach (var importParam in importParams)
+				{
+					if (importParam?.Names.IsFilled() == true)
+					{
+						if (destService == null)
+						{
+							throw new ToolException("Could not establish a connection to destination server."
+								+ " Make sure that you passed a proper connection string or file.");
+						}
+
+						importer.ImportSolutions(importParam);
+						importer.Finalise();
+					}
+				}
+			}
+		}
+
+		private void ParseConnections()
 		{
 			if (args.SourceConnectString.IsFilled())
 			{
@@ -51,7 +96,7 @@ namespace Yagasoft.Tools.SolutionMaestro.Cmd
 			else if (args.SourceConnectFile.IsFilled() && File.Exists(args.SourceConnectFile))
 			{
 				log.Log("Parsing source connection file ...");
-				ConnectionHelpers.GetConnectionString(args.SourceConnectFile);
+				connectionStrings.Source = ConnectionHelpers.GetConnectionString(args.SourceConnectFile).ConnectionString;
 				log.Log($"Source connection string: {connectionStrings.Source}.");
 			}
 
@@ -64,24 +109,73 @@ namespace Yagasoft.Tools.SolutionMaestro.Cmd
 			else if (args.DestConnectFile.IsFilled() && File.Exists(args.DestConnectFile))
 			{
 				log.Log("Parsing dest connection file ...");
-				ConnectionHelpers.GetConnectionString(args.DestConnectFile);
+				connectionStrings.Destination = ConnectionHelpers.GetConnectionString(args.DestConnectFile).ConnectionString;
 				log.Log($"Dest connection string: {connectionStrings.Destination}.");
 			}
+		}
 
+		private void ParseConfigs()
+		{
 			if (args.ExportConfig.IsFilled())
 			{
 				log.Log("Parsing export configuration ...");
-				exportParams = ConfigHelpers.Deserialise<ExportParams>(args.ExportConfig);
+				exportParams.Add(ConfigHelpers.Deserialise<ExportParams>(args.ExportConfig.Insert(1, "operation:'export',")));
 				log.Log($"Export configuration: {args.ExportConfig}.");
 			}
 
 			if (args.ImportConfig.IsFilled())
 			{
 				log.Log("Parsing import configuration ...");
-				importParams = ConfigHelpers.Deserialise<ImportParams>(args.ImportConfig);
+				importParams.Add(ConfigHelpers.Deserialise<ImportParams>(args.ImportConfig.Insert(1, "operation:'import',")));
 				log.Log($"Import configuration: {args.ImportConfig}.");
 			}
 
+			if (args.ConfigFile.IsFilled() && File.Exists(args.ConfigFile))
+			{
+				log.Log("Parsing config file ...");
+				var config = ConfigHelpers.GetConfigurationParams<SolutionParams>(args.ConfigFile);
+				log.Log($"Parsed config file.");
+
+				if (config.Pipeline != null)
+				{
+					exportParams.AddRange(config.Pipeline.Where(p => p is ExportParams).Cast<ExportParams>());
+					importParams.AddRange(config.Pipeline.Where(p => p is ImportParams).Cast<ImportParams>());
+				}
+
+				if (config.Global != null)
+				{
+					foreach (var exportParam in exportParams)
+					{
+						OverwriteConfig(config.Global, exportParam);
+					}
+
+					foreach (var importParam in importParams)
+					{
+						OverwriteConfig(config.Global, importParam);
+					}
+				}
+			}
+		}
+
+		private void OverwriteConfig(ParamsBase sourceConfig, ParamsBase targetConfig)
+		{
+			foreach (var gp in sourceConfig.GetType().GetProperties())
+			{
+				foreach (var ep in targetConfig.GetType().GetProperties()
+					.Where(p => p.Name == gp.Name))
+				{
+					var value = gp.GetValue(sourceConfig);
+
+					if (value != null)
+					{
+						ep.SetValue(targetConfig, value);
+					}
+				}
+			}
+		}
+
+		private void Connect()
+		{
 			if (connectionStrings.Source.IsFilled())
 			{
 				log.Log("Connecting to source ...");
@@ -94,17 +188,6 @@ namespace Yagasoft.Tools.SolutionMaestro.Cmd
 				log.Log("Connecting to dest ...");
 				destService = ConnectToCrm(connectionStrings.Destination);
 				log.Log("Connected to dest.");
-			}
-		}
-
-		public void Run()
-		{
-			if (exportParams?.Names.IsFilled() == true)
-			{
-				sourceService.Require(nameof(sourceService), "Could not establish a connection to source server."
-					+ " Review that you passed a proper connection string or file.");
-				var tool = new ExportSolution(sourceService, log);
-				tool.ExportSolutions(exportParams);
 			}
 		}
 

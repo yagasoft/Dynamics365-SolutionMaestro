@@ -1,14 +1,19 @@
 ﻿#region Imports
 
-using System.Collections.Generic;
+
 
 #endregion
 
 namespace Yagasoft.Tools.SolutionMaestro.Core.Parameters
 {
-	public class ExportParams : SolutionParams
+	public class ExportParams : IoParamsBase
 	{
-		public bool IsDateFile { get; set; }
-		public bool IsManaged { get; set; }
+		public bool? IsManaged
+		{
+			get => isManaged ?? false;
+			set => isManaged ??= value;
+		}
+
+		private bool? isManaged;
 	}
 }

@@ -4,6 +4,69 @@
 namespace Yagasoft.Tools.SolutionMaestro.Core
 {
 
+	#region ImportJob
+
+	public partial class ImportJob
+	{
+		public const string DisplayName = "Import Job";
+		public const string SchemaName = "ImportJob";
+		public const string EntityLogicalName = "importjob";
+
+
+		#region Enums
+
+
+		#endregion
+
+		#region Fields
+
+		public const string CompletedOn = "completedon";
+		public const string CreatedBy = "createdby";
+		public const string CreatedOn = "createdon";
+		public const string CreatedByDelegate_CreatedOnBehalfBy = "createdonbehalfby";
+		public const string Data = "data";
+		public const string ImportContext = "importcontext";
+		public const string ImportJobId = "importjobid";
+		public const string ModifiedBy = "modifiedby";
+		public const string ModifiedOn = "modifiedon";
+		public const string CreatedByDelegate_ModifiedOnBehalfBy = "modifiedonbehalfby";
+		public const string ImportJobName = "name";
+		public const string SolutionOperationContext = "operationcontext";
+		public const string Organization = "organizationid";
+		public const string Progress = "progress";
+		public const string Solution = "solutionid";
+		public const string SolutionName = "solutionname";
+		public const string StartedOn = "startedon";
+		public const string TimeZoneRuleVersionNumber = "timezoneruleversionnumber";
+		public const string UTCConversionTimeZoneCode = "utcconversiontimezonecode";
+
+		#endregion
+
+		#region Relations
+
+		public static class OneToN
+		{
+		}
+			
+		public static class NToOne
+		{
+
+			public static class Lookups
+			{
+			}
+		}
+
+		public static class NToN
+		{
+
+		}
+
+		#endregion
+	}
+	
+	#endregion
+
+
 	#region Solution
 
 	public partial class Solution

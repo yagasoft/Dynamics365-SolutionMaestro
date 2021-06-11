@@ -24,6 +24,7 @@
   "UseDisplayNames": true,
   "Template": "",
   "Folder": "",
+  "NewTemplate": true,
   "TemplateList": [],
   "EntityList": [
     "account",
@@ -683,10 +684,12 @@
     "workflowlog"
   ],
   "EntitiesSelected": [
+    "importjob",
     "solution"
   ],
   "PluginMetadataEntitiesSelected": [
-    "solution"
+    "solution",
+    "importjob"
   ],
   "OptionsetLabelsEntitiesSelected": [],
   "LookupLabelsEntitiesSelected": [],

@@ -1,0 +1,24 @@
+{
+	"global":
+	{
+		"isDateFile": false,
+		"isOverwrite": false,
+		"isRetry": false,
+		"path": "."
+	},
+	"pipeline":
+	[
+		{
+			"operation": "export",
+			"names": "<name-regex-scsv>",
+			"isManaged": false,
+			"isPublish": true
+		},
+		{
+			"operation": "import",
+			"names": "<name-regex-scsv>",
+			"isClean": false,
+			"isPublish": true
+		}
+	]
+}

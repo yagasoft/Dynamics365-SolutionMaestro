@@ -1,11 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Yagasoft.Tools.SolutionMaestro.Core.Parameters
+﻿namespace Yagasoft.Tools.SolutionMaestro.Core.Parameters
 {
-    public class ImportParams : SolutionParams
-    { }
+	public class ImportParams : IoParamsBase
+	{
+		public bool? IsClean
+		{
+			get => isClean ?? false;
+			set => isClean ??= value;
+		}
+
+		private bool? isClean;
+	}
 }
