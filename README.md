@@ -1,7 +1,8 @@
 # Dynamics365-SolutionMaestro
 
+(alpha stage)
 
-### Version: 1.0.1
+### Version: 0.0.1
 ---
 
 A Yagasoft Command Line Shell tool that contains a multitude of options to handle Dynamics Solutions.
@@ -30,7 +31,7 @@ Command line: 'Yagasoft.Tools.CmdToolShell sol --help'.
 
 ## Changes
 
-#### _v1.0.1 (2021-06-11)_
+#### _v0.0.1 (2021-06-11)_
 + Initial commit
 
 ---
